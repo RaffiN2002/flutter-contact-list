@@ -39,8 +39,17 @@ dependencies:
   firebase_auth: ^5.5.3
   cloud_firestore: ^5.6.7
   call_log: ^4.0.0
+  firebase_storage: 12.4.5
+  firebase_database: ^11.0.0
+  image_picker: ^1.0.5
   permission_handler: ^11.0.0
   shared_preferences: ^2.1.1
+  cloudinary_sdk: ^5.0.0+1
+  cloudinary_flutter: ^1.0.0
+  cloudinary_url_gen: ^1.0.0
+  cloudinary_api: ^1.0.0
+  cloudinary_public: 0.23.1
+
 
 
 dev_dependencies:

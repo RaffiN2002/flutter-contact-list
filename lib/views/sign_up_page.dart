@@ -1,6 +1,8 @@
 import 'package:flutter_contact_list/controllers/auth_services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -11,6 +13,7 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final formKey = GlobalKey<FormState>();
+  TextEditingController _usernameController = TextEditingController();
   TextEditingController _emailController = TextEditingController();
   TextEditingController _passwordController = TextEditingController();
   @override
@@ -63,6 +66,18 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       TextFormField(
                         validator: (value) =>
+                        value!.isEmpty ? "Username cannot be empty." : null,
+                        controller: _usernameController,
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(),
+                          labelText: "Username",
+                        ),
+                      ),
+                      SizedBox(
+                        height: 10,
+                      ),
+                      TextFormField(
+                        validator: (value) =>
                         value!.isEmpty ? "Email cannot be empty." : null,
                         controller: _emailController,
                         decoration: InputDecoration(
@@ -92,6 +107,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () {
+                              final User? currentUser = FirebaseAuth.instance.currentUser;
                               if (formKey.currentState!.validate()) {
                                 AuthService()
                                     .createAccountWithEmail(_emailController.text,
@@ -101,6 +117,12 @@ class _SignUpPageState extends State<SignUpPage> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
                                             content: Text("Account Created")));
+                                    FirebaseFirestore.instance.collection('user_profile')
+                                      .doc(currentUser?.uid)
+                                    .set({
+                                      'accountEmail': _emailController.text,
+                                      'accountName': _usernameController.text
+                                    });
                                     Navigator.pushReplacementNamed(
                                         context, "/home");
                                   } else {

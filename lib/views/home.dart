@@ -4,7 +4,7 @@ import 'package:call_log/call_log.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_contact_list/controllers/auth_services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
@@ -14,23 +14,25 @@ class Homepage extends StatefulWidget {
 }
 
 class _HomepageState extends State<Homepage> {
+  String _accountName = "";
+  String _accountEmail = "";
+  String _profileImageUrl = ""; // Added to store the profile image URL
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Timer? _pollTimer;
-  int _lastSavedTimestamp = 0;
+  bool _isLoading = true; // Track loading state
 
   @override
   void initState() {
     super.initState();
     _requestPermissionsAndStartPolling();
+    _loadProfileData(); // Load profile data including the image URL
   }
 
   Future<void> _requestPermissionsAndStartPolling() async {
     final phoneGranted = await Permission.phone.request().isGranted;
     if (phoneGranted) {
-      // Immediately save existing calls
-      await _saveNewCallLogs();
-
-      // Poll every 30 seconds
+      await _saveNewCallLogs(); // Save immediately
       _pollTimer = Timer.periodic(
         const Duration(seconds: 10),
             (_) => _saveNewCallLogs(),
@@ -40,19 +42,29 @@ class _HomepageState extends State<Homepage> {
     }
   }
 
+  Future<int> _getLastSavedTimestamp() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('lastSavedTimestamp') ?? 0;
+  }
+
+  Future<void> _setLastSavedTimestamp(int timestamp) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('lastSavedTimestamp', timestamp);
+  }
+
   Future<void> _saveNewCallLogs() async {
     try {
       final Iterable<CallLogEntry> entries = await CallLog.get();
       final userId = _auth.currentUser?.uid ?? "unknown";
+      final lastSaved = await _getLastSavedTimestamp();
+      int maxTimestamp = lastSaved;
 
       for (var entry in entries) {
         final timestamp = entry.timestamp ?? 0;
 
-        // Only process incoming calls newer than last saved timestamp
-        if (entry.callType == CallType.incoming && timestamp > _lastSavedTimestamp) {
+        if (entry.callType == CallType.incoming && timestamp > lastSaved) {
           final timestampObj = Timestamp.fromMillisecondsSinceEpoch(timestamp);
 
-          // Check if a call log with the same timestamp and receiverUserId already exists
           final existing = await FirebaseFirestore.instance
               .collection('call_logs')
               .where('timestamp', isEqualTo: timestampObj)
@@ -61,7 +73,6 @@ class _HomepageState extends State<Homepage> {
               .get();
 
           if (existing.docs.isEmpty) {
-            // Save new call log if no duplicate found
             await FirebaseFirestore.instance.collection('call_logs').add({
               'phoneNumber': entry.number ?? '',
               'callType': 'incoming',
@@ -71,24 +82,85 @@ class _HomepageState extends State<Homepage> {
               'userId': userId,
             });
 
-            // Update last saved timestamp
-            if (timestamp > _lastSavedTimestamp) {
-              _lastSavedTimestamp = timestamp;
+            if (timestamp > maxTimestamp) {
+              maxTimestamp = timestamp;
             }
           } else {
             debugPrint("Duplicate call log found — skipping save.");
           }
         }
       }
+
+      // Update persistent timestamp
+      if (maxTimestamp > lastSaved) {
+        await _setLastSavedTimestamp(maxTimestamp);
+      }
     } catch (e) {
       debugPrint('Error saving call logs: $e');
     }
   }
 
-
   void _logout() async {
     await _auth.signOut();
-    // TODO: Navigate to login screen after logout
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, "/login");
+    }
+  }
+
+  Future<Map<String, dynamic>?> getProfileData() async {
+    try {
+      final User? currentUser = _auth.currentUser;
+      if (currentUser == null) {
+        debugPrint("getProfileData: No current user logged in. Cannot fetch profile.");
+        return null;
+      }
+
+      final DocumentSnapshot profileDoc = await _firestore
+          .collection('user_profile')
+          .doc(currentUser.uid)
+          .get();
+
+      if (profileDoc.exists) {
+        debugPrint("getProfileData: Profile document found for UID: ${currentUser.uid}");
+        return profileDoc.data() as Map<String, dynamic>?;
+      } else {
+        debugPrint("getProfileData: Profile document NOT found for UID: ${currentUser.uid}");
+        return null;
+      }
+    } catch (e) {
+      debugPrint("getProfileData: Error fetching profile data: $e");
+      return null;
+    }
+  }
+
+  Future<void> _loadProfileData() async {
+    try {
+      final Map<String, dynamic>? profileData = await getProfileData();
+      if (mounted) {
+        setState(() {
+          if (profileData != null) {
+            _accountName = profileData['accountName'] ?? "User Name Not Set";
+            _accountEmail = profileData['accountEmail'] ?? "Email Not Set";
+            _profileImageUrl = profileData['accountPFP'] ?? ''; // Fetch profile image URL
+          } else {
+            _accountName = "Guest User";
+            _accountEmail = _auth.currentUser?.email ?? "No Email (Logged Out)";
+            _profileImageUrl = ''; // Ensure it's empty if no profile data
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error in _loadProfileData: $e");
+      if (mounted) {
+        setState(() {
+          _accountName = "Error";
+          _accountEmail = "Failed to load profile data.";
+          _profileImageUrl = ''; // Ensure it's empty on error
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -104,30 +176,38 @@ class _HomepageState extends State<Homepage> {
         child: Column(
           children: [
             UserAccountsDrawerHeader(
-              accountName: const Text("Test User"),
-              accountEmail: const Text("testuser@example.com"),
-              currentAccountPicture: CircleAvatar(
-                backgroundImage: AssetImage("assets/jaundice.jpg"),
+              accountName: Text(_isLoading ? "Loading..." : _accountName), // Show loading text
+              accountEmail: Text(_isLoading ? "Loading..." : _accountEmail), // Show loading text
+              currentAccountPicture: _profileImageUrl.isNotEmpty
+                  ? CircleAvatar(
+                backgroundImage: NetworkImage(_profileImageUrl),
+                backgroundColor: Colors.white, // Optional: for background if image has transparency
+              )
+                  : CircleAvatar( // Fallback if no image URL
+                backgroundColor: Colors.grey[200], // A light grey background
+                child: Icon(
+                  Icons.person, // A default person icon
+                  size: 50,
+                  color: Colors.grey[600],
+                ),
               ),
             ),
             ListTile(
               leading: const Icon(Icons.settings),
               title: const Text("Account Settings"),
-              onTap: () {}, // Add navigation if needed
+              onTap: () {Navigator.pushReplacementNamed(context, "/accountSettings");},
             ),
             ListTile(
               leading: const Icon(Icons.logout),
               title: const Text("Logout"),
-              onTap: () async {
-                await AuthService().logout();
-                Navigator.pushReplacementNamed(context, "/login");
-              },
+              onTap: _logout,
             ),
           ],
         ),
       ),
       appBar: AppBar(
         title: const Text("Contacts"),
+        backgroundColor: Colors.lightBlue, // App bar color changed to light blue
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -149,10 +229,6 @@ class _HomepageState extends State<Homepage> {
             itemCount: docs.length,
             itemBuilder: (context, index) {
               try {
-                if (index >= docs.length) {
-                  return const SizedBox.shrink();
-                }
-
                 final docSnapshot = docs[index];
                 final data = docSnapshot.data() as Map<String, dynamic>?;
 
@@ -163,13 +239,9 @@ class _HomepageState extends State<Homepage> {
                 final phoneNumber = data['phoneNumber'] ?? 'Unknown';
                 final callType = data['callType'] ?? 'unknown';
                 final timestampRaw = data['timestamp'];
-                DateTime timestamp;
-
-                if (timestampRaw is Timestamp) {
-                  timestamp = timestampRaw.toDate();
-                } else {
-                  timestamp = DateTime.now(); // fallback if timestamp missing or invalid
-                }
+                DateTime timestamp = (timestampRaw is Timestamp)
+                    ? timestampRaw.toDate()
+                    : DateTime.now();
 
                 final duration = data['duration'] ?? 0;
 
@@ -184,7 +256,8 @@ class _HomepageState extends State<Homepage> {
                   ),
                   title: Text(phoneNumber),
                   subtitle: Text(
-                    '${callType[0].toUpperCase()}${callType.substring(1)} • ${timestamp.toLocal()} • Duration: ${duration}s',
+                    '${callType[0].toUpperCase()}${callType.substring(1)} • ${timestamp
+                        .toLocal()} • Duration: ${duration}s',
                   ),
                 );
               } catch (e, stack) {
