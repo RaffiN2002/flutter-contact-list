@@ -16,21 +16,20 @@ class _SignUpPageState extends State<SignUpPage> {
   TextEditingController _usernameController = TextEditingController();
   TextEditingController _emailController = TextEditingController();
   TextEditingController _passwordController = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // Background Image
           Positioned.fill(
             child: Image.asset(
-              'assets/bg.jpg', // Replace with your image path
+              'assets/bg.jpg',
               fit: BoxFit.cover,
             ),
           ),
-          // RadioLog outside the box
           Positioned(
-            top: MediaQuery.of(context).size.height * 0.10, // Adjust top position as needed
+            top: MediaQuery.of(context).size.height * 0.10,
             left: 0,
             right: 0,
             child: Center(
@@ -39,7 +38,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 style: GoogleFonts.sora(
                     fontSize: 40,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white), // White color for RadioLog
+                    color: Colors.white),
               ),
             ),
           ),
@@ -62,7 +61,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           style: GoogleFonts.sora(
                               fontSize: 30, fontWeight: FontWeight.w700)),
                       SizedBox(
-                        height: 20, // Add spacing below RadioLog
+                        height: 20,
                       ),
                       TextFormField(
                         validator: (value) =>
@@ -107,24 +106,31 @@ class _SignUpPageState extends State<SignUpPage> {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () {
-                              final User? currentUser = FirebaseAuth.instance.currentUser;
                               if (formKey.currentState!.validate()) {
                                 AuthService()
                                     .createAccountWithEmail(_emailController.text,
                                     _passwordController.text)
-                                    .then((value) {
+                                    .then((value) async {
                                   if (value == "Account Created") {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                            content: Text("Account Created")));
-                                    FirebaseFirestore.instance.collection('user_profile')
-                                      .doc(currentUser?.uid)
-                                    .set({
-                                      'accountEmail': _emailController.text,
-                                      'accountName': _usernameController.text
-                                    });
-                                    Navigator.pushReplacementNamed(
-                                        context, "/home");
+                                    final User? currentUser = FirebaseAuth.instance.currentUser;
+
+                                    if (currentUser != null) {
+                                      await FirebaseFirestore.instance.collection('user_profile')
+                                          .doc(currentUser.uid)
+                                          .set({
+                                        'accountEmail': _emailController.text,
+                                        'accountName': _usernameController.text
+                                      });
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                              content: Text("Account Created and Profile Saved")));
+                                      Navigator.pushReplacementNamed(
+                                          context, "/home");
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                              content: Text("Account created, but failed to get user data for profile.")));
+                                    }
                                   } else {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
@@ -139,10 +145,10 @@ class _SignUpPageState extends State<SignUpPage> {
                               }
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue, // Blue background
-                              foregroundColor: Colors.white, // White text
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8.0), // Less round corners
+                                borderRadius: BorderRadius.circular(8.0),
                               ),
                             ),
                             child: Text(

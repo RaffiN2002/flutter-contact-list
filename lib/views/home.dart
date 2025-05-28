@@ -16,23 +16,23 @@ class Homepage extends StatefulWidget {
 class _HomepageState extends State<Homepage> {
   String _accountName = "";
   String _accountEmail = "";
-  String _profileImageUrl = ""; // Added to store the profile image URL
+  String _profileImageUrl = "";
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Timer? _pollTimer;
-  bool _isLoading = true; // Track loading state
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _requestPermissionsAndStartPolling();
-    _loadProfileData(); // Load profile data including the image URL
+    _loadProfileData();
   }
 
   Future<void> _requestPermissionsAndStartPolling() async {
     final phoneGranted = await Permission.phone.request().isGranted;
     if (phoneGranted) {
-      await _saveNewCallLogs(); // Save immediately
+      await _saveNewCallLogs();
       _pollTimer = Timer.periodic(
         const Duration(seconds: 10),
             (_) => _saveNewCallLogs(),
@@ -80,6 +80,7 @@ class _HomepageState extends State<Homepage> {
               'receiverUserId': userId,
               'duration': entry.duration ?? 0,
               'userId': userId,
+              'name': entry.name ?? '',
             });
 
             if (timestamp > maxTimestamp) {
@@ -91,7 +92,6 @@ class _HomepageState extends State<Homepage> {
         }
       }
 
-      // Update persistent timestamp
       if (maxTimestamp > lastSaved) {
         await _setLastSavedTimestamp(maxTimestamp);
       }
@@ -111,7 +111,6 @@ class _HomepageState extends State<Homepage> {
     try {
       final User? currentUser = _auth.currentUser;
       if (currentUser == null) {
-        debugPrint("getProfileData: No current user logged in. Cannot fetch profile.");
         return null;
       }
 
@@ -121,14 +120,11 @@ class _HomepageState extends State<Homepage> {
           .get();
 
       if (profileDoc.exists) {
-        debugPrint("getProfileData: Profile document found for UID: ${currentUser.uid}");
         return profileDoc.data() as Map<String, dynamic>?;
       } else {
-        debugPrint("getProfileData: Profile document NOT found for UID: ${currentUser.uid}");
         return null;
       }
     } catch (e) {
-      debugPrint("getProfileData: Error fetching profile data: $e");
       return null;
     }
   }
@@ -141,11 +137,11 @@ class _HomepageState extends State<Homepage> {
           if (profileData != null) {
             _accountName = profileData['accountName'] ?? "User Name Not Set";
             _accountEmail = profileData['accountEmail'] ?? "Email Not Set";
-            _profileImageUrl = profileData['accountPFP'] ?? ''; // Fetch profile image URL
+            _profileImageUrl = profileData['accountPFP'] ?? '';
           } else {
             _accountName = "Guest User";
             _accountEmail = _auth.currentUser?.email ?? "No Email (Logged Out)";
-            _profileImageUrl = ''; // Ensure it's empty if no profile data
+            _profileImageUrl = '';
           }
           _isLoading = false;
         });
@@ -156,7 +152,7 @@ class _HomepageState extends State<Homepage> {
         setState(() {
           _accountName = "Error";
           _accountEmail = "Failed to load profile data.";
-          _profileImageUrl = ''; // Ensure it's empty on error
+          _profileImageUrl = '';
           _isLoading = false;
         });
       }
@@ -176,17 +172,17 @@ class _HomepageState extends State<Homepage> {
         child: Column(
           children: [
             UserAccountsDrawerHeader(
-              accountName: Text(_isLoading ? "Loading..." : _accountName), // Show loading text
-              accountEmail: Text(_isLoading ? "Loading..." : _accountEmail), // Show loading text
+              accountName: Text(_isLoading ? "Loading..." : _accountName),
+              accountEmail: Text(_isLoading ? "Loading..." : _accountEmail),
               currentAccountPicture: _profileImageUrl.isNotEmpty
                   ? CircleAvatar(
                 backgroundImage: NetworkImage(_profileImageUrl),
-                backgroundColor: Colors.white, // Optional: for background if image has transparency
+                backgroundColor: Colors.white,
               )
-                  : CircleAvatar( // Fallback if no image URL
-                backgroundColor: Colors.grey[200], // A light grey background
+                  : CircleAvatar(
+                backgroundColor: Colors.grey[200],
                 child: Icon(
-                  Icons.person, // A default person icon
+                  Icons.person,
                   size: 50,
                   color: Colors.grey[600],
                 ),
@@ -207,7 +203,7 @@ class _HomepageState extends State<Homepage> {
       ),
       appBar: AppBar(
         title: const Text("Contacts"),
-        backgroundColor: Colors.lightBlue, // App bar color changed to light blue
+        backgroundColor: Colors.lightBlue,
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -242,8 +238,8 @@ class _HomepageState extends State<Homepage> {
                 DateTime timestamp = (timestampRaw is Timestamp)
                     ? timestampRaw.toDate()
                     : DateTime.now();
-
                 final duration = data['duration'] ?? 0;
+                final name = data['name'] ?? '';
 
                 return ListTile(
                   leading: Icon(
@@ -254,7 +250,20 @@ class _HomepageState extends State<Homepage> {
                         : Icons.call_missed,
                     color: callType == 'missed' ? Colors.red : Colors.green,
                   ),
-                  title: Text(phoneNumber),
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (name.isNotEmpty)
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      Text(phoneNumber),
+                    ],
+                  ),
                   subtitle: Text(
                     '${callType[0].toUpperCase()}${callType.substring(1)} • ${timestamp
                         .toLocal()} • Duration: ${duration}s',
