@@ -7,7 +7,7 @@ import 'views/login_page.dart';
 import 'views/sign_up_page.dart';
 
 
-import 'package:cloudinary_url_gen/cloudinary.dart'; // For the Cloudinary object
+import 'package:cloudinary_url_gen/cloudinary.dart';
 
 const String CLOUD_NAME = 'dodhpqiu7';
 const String UPLOAD_PRESET = 'firebase_pfp_upload';
